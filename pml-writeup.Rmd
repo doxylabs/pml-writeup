@@ -1,0 +1,8 @@
+---
+title: "pml-writeup"
+author: "Hampus Renselor"
+date: "June 20, 2015"
+output: html_document
+---
+
+
