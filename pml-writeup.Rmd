@@ -1,10 +1,161 @@
 ---
 title: "pml-writeup"
 author: "Hampus Renselor"
-date: "June 20, 2015"
+date: "July 24, 2015"
 output: html_document
 ---
 
-## Pangolin!
+## Summary
 
-Happytime
+Here, we predict exercise qualities based on the manner in which exercises were performed and graded by experts. We look at the characteristics of the data, perform a cross-validation with diagnostic information and compare two different methods of building the model. This model is then applied in a seperate exercise to a set of data `pml-testing.csv` for automated grading.
+
+```
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3gvOQfqNi
+```
+
+## Data Load and Clean
+
+```{r echo=FALSE,message=FALSE}
+library(caret); library(ggplot2); library(rpart); library(randomForest)
+```
+
+Read the training and testing dataset. While we have a test set for the assignment, later we'll use a subset of our trainSet for diagnostics in assessing our models.
+
+```{r}
+origTrainSet<-read.csv("pml-training.csv",stringsAsFactors=F)
+origTrainSet$classe<-as.factor(origTrainSet$classe)
+origTestSet<-read.csv("pml-testing.csv",stringsAsFactors=F)
+trainSet<-origTrainSet
+testSet<-origTestSet
+```
+
+We see that `problem_id` has been removed from the training set,
+```{r}
+setdiff(names(testSet),names(trainSet))
+```
+
+and `classe` is not in the test set.
+```{r}
+setdiff(names(trainSet),names(testSet))
+```
+
+This is interesting in that the numeric predictors are not the same count in both the training and testing sets. We need to be careful if our training set turns up columns that are not in the testing set. Forget about testing data for now...
+
+We remove the variables causing NA, "Missing Values"" errors and focus on the predictors that are numeric. 
+```{r}
+trainSet<-trainSet[,colSums(is.na(trainSet))<10000]
+```
+
+Then we select the variables that are strictly measurements vs. the mean, SD, position, or some identifying artifact of the study.
+```{r}
+trainSet<-trainSet[,-grep('X|_x|_y|_z|user_name|timestamp|window|total|max|min|amplitude|kurtosis_|skewness_',names(trainSet))]
+```
+
+
+## Cross-Validation
+
+To perform diagnostics on our model, we'll do training/testing with 75%/25% samples of the population.
+
+```{r}
+set.seed(2112)
+intrain<-createDataPartition(trainSet$classe,p=0.75,list=F)
+training<-trainSet[intrain,]
+testing<-trainSet[-intrain,]
+```
+
+### Recursive Partition Tree
+
+We fit a recursive partition tree model and show diagnostics of the predictions. We'll use the 75% population to predict the values of the other 25% and see how the model fits. 
+
+```{r cache=FALSE}
+modelTree<-train(classe~., method="rpart", data=training)
+```
+
+Diagnostics from the RPT model:
+
+```{r}
+predictions<-predict(modelTree,testing)
+treeCM<-confusionMatrix(predictions,reference = testing$classe)
+print(modelTree)
+treeCM$table
+```
+
+The rpart results are barely beating a coin toss.
+
+### Random Forest Model
+
+Here we try to improve our results with a random forest.
+
+```{r echo=FALSE,message=FALSE}
+# max out the number of threads we consume from the system (says cores, really threads)
+maxCores<-16
+
+# system info on a mac or linux.
+uname<-system("uname",intern=T)
+if(uname == "Darwin"){
+  numCores<-as.numeric(system("sysctl -n hw.ncpu",intern=T))
+}else{
+  numCores<-as.numeric(system("cat /proc/cpuinfo | grep '^processor' | wc -l",intern = T))
+}
+
+numCores<-min(numCores,maxCores)
+message("Registering Cores: ",numCores)
+library(doMC) ; registerDoMC(cores = numCores)
+```
+
+```{r cache=FALSE}
+modelRF<-train(classe ~ . , method="rf", data=training)
+```
+
+Diagnostics from the random forest model's predictions:
+
+```{r}
+predictDiag<-predict(modelRF,testing)
+forestCM<-confusionMatrix(predictDiag,reference=testing$classe)
+print(modelRF)
+forestCM$table
+```
+
+Much better results with the RF model.
+
+## Partition Tree Model vs. Random Forest 
+
+```{r}
+b<-modelTree$bestTune[,'cp']
+aTree<-modelTree$results[modelTree$results$cp==b,'Accuracy']*100
+b<-modelRF$bestTune[,'mtry']
+aForest<-modelRF$results[modelRF$results$mtry==b,'Accuracy']*100
+sprintf("Partition Tree Accuracy: %0.2f%%",aTree)
+sprintf("Random Forest Accuracy:  %0.2f%%",aForest)
+```
+
+## Apply the Model
+
+Now we apply the model to our set of testing data.
+
+First predict successful exercises and errors on the given testing set.
+
+```{r}
+predict(modelRF,testSet)
+```
+
+Now, save the datapoints to files for upload.
+
+```{r}
+adir<-"adir"
+if(!file.exists(adir)) dir.create(adir)
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("adir/problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predict(modelRF,testSet))
+
+```
+

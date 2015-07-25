@@ -11,3 +11,9 @@
 # produced vignettes
 vignettes/*.html
 vignettes/*.pdf
+
+# my stuff
+adir/
+pml-training.csv
+pml-testing.csv
+pml-writeup_cache/

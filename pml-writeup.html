@@ -10,7 +10,7 @@
 
 <meta name="author" content="Hampus Renselor" />
 
-<meta name="date" content="2015-06-20" />
+<meta name="date" content="2015-07-24" />
 
 <title>pml-writeup</title>
 
@@ -64,13 +64,152 @@ img {
 <div id="header">
 <h1 class="title">pml-writeup</h1>
 <h4 class="author"><em>Hampus Renselor</em></h4>
-<h4 class="date"><em>June 20, 2015</em></h4>
+<h4 class="date"><em>July 24, 2015</em></h4>
 </div>
 
 
-<div id="pangolin" class="section level2">
-<h2>Pangolin!</h2>
-<p>Happytime</p>
+<div id="summary" class="section level2">
+<h2>Summary</h2>
+<p>Here, we predict exercise qualities based on the manner in which exercises were performed and graded by experts. We look at the characteristics of the data, perform a cross-validation with diagnostic information and compare two different methods of building the model. This model is then applied in a seperate exercise to a set of data <code>pml-testing.csv</code> for automated grading.</p>
+<pre><code>Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3gvOQfqNi</code></pre>
+</div>
+<div id="data-load-and-clean" class="section level2">
+<h2>Data Load and Clean</h2>
+<p>Read the training and testing dataset. While we have a test set for the assignment, later we’ll use a subset of our trainSet for diagnostics in assessing our models.</p>
+<pre class="r"><code>origTrainSet&lt;-read.csv(&quot;pml-training.csv&quot;,stringsAsFactors=F)
+origTrainSet$classe&lt;-as.factor(origTrainSet$classe)
+origTestSet&lt;-read.csv(&quot;pml-testing.csv&quot;,stringsAsFactors=F)
+trainSet&lt;-origTrainSet
+testSet&lt;-origTestSet</code></pre>
+<p>We see that <code>problem_id</code> has been removed from the training set,</p>
+<pre class="r"><code>setdiff(names(testSet),names(trainSet))</code></pre>
+<pre><code>## [1] &quot;problem_id&quot;</code></pre>
+<p>and <code>classe</code> is not in the test set.</p>
+<pre class="r"><code>setdiff(names(trainSet),names(testSet))</code></pre>
+<pre><code>## [1] &quot;classe&quot;</code></pre>
+<p>This is interesting in that the numeric predictors are not the same count in both the training and testing sets. We need to be careful if our training set turns up columns that are not in the testing set. Forget about testing data for now…</p>
+<p>We remove the variables causing NA, “Missing Values”&quot; errors and focus on the predictors that are numeric.</p>
+<pre class="r"><code>trainSet&lt;-trainSet[,colSums(is.na(trainSet))&lt;10000]</code></pre>
+<p>Then we select the variables that are strictly measurements vs. the mean, SD, position, or some identifying artifact of the study.</p>
+<pre class="r"><code>trainSet&lt;-trainSet[,-grep('X|_x|_y|_z|user_name|timestamp|window|total|max|min|amplitude|kurtosis_|skewness_',names(trainSet))]</code></pre>
+</div>
+<div id="cross-validation" class="section level2">
+<h2>Cross-Validation</h2>
+<p>To perform diagnostics on our model, we’ll do training/testing with 75%/25% samples of the population.</p>
+<pre class="r"><code>set.seed(2112)
+intrain&lt;-createDataPartition(trainSet$classe,p=0.75,list=F)
+training&lt;-trainSet[intrain,]
+testing&lt;-trainSet[-intrain,]</code></pre>
+<div id="recursive-partition-tree" class="section level3">
+<h3>Recursive Partition Tree</h3>
+<p>We fit a recursive partition tree model and show diagnostics of the predictions. We’ll use the 75% population to predict the values of the other 25% and see how the model fits.</p>
+<pre class="r"><code>modelTree&lt;-train(classe~., method=&quot;rpart&quot;, data=training)</code></pre>
+<p>Diagnostics from the RPT model:</p>
+<pre class="r"><code>predictions&lt;-predict(modelTree,testing)
+treeCM&lt;-confusionMatrix(predictions,reference = testing$classe)
+print(modelTree)</code></pre>
+<pre><code>## CART 
+## 
+## 14718 samples
+##    12 predictors
+##     5 classes: 'A', 'B', 'C', 'D', 'E' 
+## 
+## No pre-processing
+## Resampling: Bootstrapped (25 reps) 
+## 
+## Summary of sample sizes: 14718, 14718, 14718, 14718, 14718, 14718, ... 
+## 
+## Resampling results across tuning parameters:
+## 
+##   cp          Accuracy   Kappa       Accuracy SD  Kappa SD  
+##   0.02136144  0.5657211  0.45174663  0.02488777   0.03268278
+##   0.03421627  0.5147202  0.37878608  0.05740703   0.09036296
+##   0.11563657  0.3298451  0.06808342  0.03997689   0.06161846
+## 
+## Accuracy was used to select the optimal model using  the largest value.
+## The final value used for the model was cp = 0.02136144.</code></pre>
+<pre class="r"><code>treeCM$table</code></pre>
+<pre><code>##           Reference
+## Prediction   A   B   C   D   E
+##          A 931 173  12  88  41
+##          B 142 448  89 192 129
+##          C 280 321 739 266 203
+##          D  32   5  15 177  14
+##          E  10   2   0  81 514</code></pre>
+<p>The rpart results are barely beating a coin toss.</p>
+</div>
+<div id="random-forest-model" class="section level3">
+<h3>Random Forest Model</h3>
+<p>Here we try to improve our results with a random forest.</p>
+<pre class="r"><code>modelRF&lt;-train(classe ~ . , method=&quot;rf&quot;, data=training)</code></pre>
+<p>Diagnostics from the random forest model’s predictions:</p>
+<pre class="r"><code>predictDiag&lt;-predict(modelRF,testing)
+forestCM&lt;-confusionMatrix(predictDiag,reference=testing$classe)
+print(modelRF)</code></pre>
+<pre><code>## Random Forest 
+## 
+## 14718 samples
+##    12 predictors
+##     5 classes: 'A', 'B', 'C', 'D', 'E' 
+## 
+## No pre-processing
+## Resampling: Bootstrapped (25 reps) 
+## 
+## Summary of sample sizes: 14718, 14718, 14718, 14718, 14718, 14718, ... 
+## 
+## Resampling results across tuning parameters:
+## 
+##   mtry  Accuracy   Kappa      Accuracy SD  Kappa SD   
+##    2    0.9827750  0.9782149  0.001831897  0.002319041
+##    7    0.9830483  0.9785623  0.002047494  0.002592369
+##   12    0.9748787  0.9682387  0.003083888  0.003899175
+## 
+## Accuracy was used to select the optimal model using  the largest value.
+## The final value used for the model was mtry = 7.</code></pre>
+<pre class="r"><code>forestCM$table</code></pre>
+<pre><code>##           Reference
+## Prediction    A    B    C    D    E
+##          A 1394    8    0    0    0
+##          B    0  929    5    0    4
+##          C    0   10  846    3    5
+##          D    1    2    4  801    1
+##          E    0    0    0    0  891</code></pre>
+<p>Much better results with the RF model.</p>
+</div>
+</div>
+<div id="partition-tree-model-vs.random-forest" class="section level2">
+<h2>Partition Tree Model vs. Random Forest</h2>
+<pre class="r"><code>b&lt;-modelTree$bestTune[,'cp']
+aTree&lt;-modelTree$results[modelTree$results$cp==b,'Accuracy']*100
+b&lt;-modelRF$bestTune[,'mtry']
+aForest&lt;-modelRF$results[modelRF$results$mtry==b,'Accuracy']*100
+sprintf(&quot;Partition Tree Accuracy: %0.2f%%&quot;,aTree)</code></pre>
+<pre><code>## [1] &quot;Partition Tree Accuracy: 56.57%&quot;</code></pre>
+<pre class="r"><code>sprintf(&quot;Random Forest Accuracy:  %0.2f%%&quot;,aForest)</code></pre>
+<pre><code>## [1] &quot;Random Forest Accuracy:  98.30%&quot;</code></pre>
+</div>
+<div id="apply-the-model" class="section level2">
+<h2>Apply the Model</h2>
+<p>Now we apply the model to our set of testing data.</p>
+<p>First predict successful exercises and errors on the given testing set.</p>
+<pre class="r"><code>predict(modelRF,testSet)</code></pre>
+<pre><code>##  [1] B A B A A E D B A A B C B A E E A B B B
+## Levels: A B C D E</code></pre>
+<p>Now, save the datapoints to files for upload.</p>
+<pre class="r"><code>adir&lt;-&quot;adir&quot;
+if(!file.exists(adir)) dir.create(adir)
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0(&quot;adir/problem_id_&quot;,i,&quot;.txt&quot;)
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predict(modelRF,testSet))</code></pre>
 </div>
 
 
