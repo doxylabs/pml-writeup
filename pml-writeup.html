@@ -70,7 +70,8 @@ img {
 
 <div id="summary" class="section level2">
 <h2>Summary</h2>
-<p>Here, we predict exercise qualities based on the manner in which exercises were performed and graded by experts. We look at the characteristics of the data, perform a cross-validation with diagnostic information and compare two different methods of building the model. This model is then applied in a seperate exercise to a set of data <code>pml-testing.csv</code> for automated grading.</p>
+<p>Here, we predict exercise qualities using a model of exercises graded by experts. The objective is to identify the accuracy of the model and estimate error rates we’ll see. We look at the characteristics of the data, perform a cross-validation with diagnostic information and compare two different methods of building the model. This model is then applied in a seperate exercise to a set of data <code>pml-testing.csv</code> for automated grading.</p>
+<p>We estimate ~1.7% out of sample error based on a Random Forest model with 75% training sample. This was enough for a 20/20 score on the homework.</p>
 <pre><code>Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
 
 Read more: http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3gvOQfqNi</code></pre>
@@ -83,13 +84,6 @@ origTrainSet$classe&lt;-as.factor(origTrainSet$classe)
 origTestSet&lt;-read.csv(&quot;pml-testing.csv&quot;,stringsAsFactors=F)
 trainSet&lt;-origTrainSet
 testSet&lt;-origTestSet</code></pre>
-<p>We see that <code>problem_id</code> has been removed from the training set,</p>
-<pre class="r"><code>setdiff(names(testSet),names(trainSet))</code></pre>
-<pre><code>## [1] &quot;problem_id&quot;</code></pre>
-<p>and <code>classe</code> is not in the test set.</p>
-<pre class="r"><code>setdiff(names(trainSet),names(testSet))</code></pre>
-<pre><code>## [1] &quot;classe&quot;</code></pre>
-<p>This is interesting in that the numeric predictors are not the same count in both the training and testing sets. We need to be careful if our training set turns up columns that are not in the testing set. Forget about testing data for now…</p>
 <p>We remove the variables causing NA, “Missing Values”&quot; errors and focus on the predictors that are numeric.</p>
 <pre class="r"><code>trainSet&lt;-trainSet[,colSums(is.na(trainSet))&lt;10000]</code></pre>
 <p>Then we select the variables that are strictly measurements vs. the mean, SD, position, or some identifying artifact of the study.</p>
@@ -138,69 +132,77 @@ print(modelTree)</code></pre>
 ##          C 280 321 739 266 203
 ##          D  32   5  15 177  14
 ##          E  10   2   0  81 514</code></pre>
-<p>The rpart results are barely beating a coin toss.</p>
+<p>The rpart results are barely beating a coin toss (see comparison below).</p>
 </div>
 <div id="random-forest-model" class="section level3">
 <h3>Random Forest Model</h3>
 <p>Here we try to improve our results with a random forest.</p>
-<pre class="r"><code>modelRF&lt;-train(classe ~ . , method=&quot;rf&quot;, data=training)</code></pre>
-<p>Diagnostics from the random forest model’s predictions:</p>
+<pre class="r"><code>modelRF&lt;-train(classe ~ . , method=&quot;rf&quot;, data=training)
+modelRF$finalModel</code></pre>
+<pre><code>## 
+## Call:
+##  randomForest(x = x, y = y, mtry = param$mtry) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 7
+## 
+##         OOB estimate of  error rate: 1.16%
+## Confusion matrix:
+##      A    B    C    D    E class.error
+## A 4167   13    0    3    2 0.004301075
+## B   20 2783   38    6    1 0.022823034
+## C    1   18 2530   17    1 0.014413713
+## D    2    6   15 2384    5 0.011608624
+## E    1    6    7    9 2683 0.008499630</code></pre>
+<p>Confusion Matrix from the random forest model’s predictions compared to the testing set’s classe:</p>
 <pre class="r"><code>predictDiag&lt;-predict(modelRF,testing)
 forestCM&lt;-confusionMatrix(predictDiag,reference=testing$classe)
-print(modelRF)</code></pre>
-<pre><code>## Random Forest 
+forestCM</code></pre>
+<pre><code>## Confusion Matrix and Statistics
 ## 
-## 14718 samples
-##    12 predictors
-##     5 classes: 'A', 'B', 'C', 'D', 'E' 
-## 
-## No pre-processing
-## Resampling: Bootstrapped (25 reps) 
-## 
-## Summary of sample sizes: 14718, 14718, 14718, 14718, 14718, 14718, ... 
-## 
-## Resampling results across tuning parameters:
-## 
-##   mtry  Accuracy   Kappa      Accuracy SD  Kappa SD   
-##    2    0.9827750  0.9782149  0.001831897  0.002319041
-##    7    0.9830483  0.9785623  0.002047494  0.002592369
-##   12    0.9748787  0.9682387  0.003083888  0.003899175
-## 
-## Accuracy was used to select the optimal model using  the largest value.
-## The final value used for the model was mtry = 7.</code></pre>
-<pre class="r"><code>forestCM$table</code></pre>
-<pre><code>##           Reference
+##           Reference
 ## Prediction    A    B    C    D    E
 ##          A 1394    8    0    0    0
 ##          B    0  929    5    0    4
 ##          C    0   10  846    3    5
 ##          D    1    2    4  801    1
-##          E    0    0    0    0  891</code></pre>
-<p>Much better results with the RF model.</p>
+##          E    0    0    0    0  891
+## 
+## Overall Statistics
+##                                           
+##                Accuracy : 0.9912          
+##                  95% CI : (0.9882, 0.9936)
+##     No Information Rate : 0.2845          
+##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16       
+##                                           
+##                   Kappa : 0.9889          
+##  Mcnemar's Test P-Value : NA              
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            0.9993   0.9789   0.9895   0.9963   0.9889
+## Specificity            0.9977   0.9977   0.9956   0.9980   1.0000
+## Pos Pred Value         0.9943   0.9904   0.9792   0.9901   1.0000
+## Neg Pred Value         0.9997   0.9950   0.9978   0.9993   0.9975
+## Prevalence             0.2845   0.1935   0.1743   0.1639   0.1837
+## Detection Rate         0.2843   0.1894   0.1725   0.1633   0.1817
+## Detection Prevalence   0.2859   0.1913   0.1762   0.1650   0.1817
+## Balanced Accuracy      0.9985   0.9883   0.9925   0.9972   0.9945</code></pre>
+<p>We see much better results with the RF model. Let’s compare the models and estimate an out of sample (aka: extra-sample) error.</p>
 </div>
 </div>
-<div id="partition-tree-model-vs.random-forest" class="section level2">
-<h2>Partition Tree Model vs. Random Forest</h2>
-<pre class="r"><code>b&lt;-modelTree$bestTune[,'cp']
-aTree&lt;-modelTree$results[modelTree$results$cp==b,'Accuracy']*100
-b&lt;-modelRF$bestTune[,'mtry']
-aForest&lt;-modelRF$results[modelRF$results$mtry==b,'Accuracy']*100
-sprintf(&quot;Partition Tree Accuracy: %0.2f%%&quot;,aTree)</code></pre>
-<pre><code>## [1] &quot;Partition Tree Accuracy: 56.57%&quot;</code></pre>
-<pre class="r"><code>sprintf(&quot;Random Forest Accuracy:  %0.2f%%&quot;,aForest)</code></pre>
-<pre><code>## [1] &quot;Random Forest Accuracy:  98.30%&quot;</code></pre>
+<div id="model-comparison-and-expected-out-of-sample-error" class="section level2">
+<h2>Model Comparison and Expected Out-of-Sample Error</h2>
+<p>The results from both models are shown with their accuracy and error. It’s clear we’ll use the random forest model to make our predictions.</p>
+<pre><code>## [1] &quot;Partition Tree Accuracy: 56.57% --&gt; 43.43% expected extra-sample error&quot;</code></pre>
+<pre><code>## [1] &quot;Random Forest Accuracy:  98.30% --&gt; 1.70% expected extra-sample error&quot;</code></pre>
 </div>
 <div id="apply-the-model" class="section level2">
 <h2>Apply the Model</h2>
-<p>Now we apply the model to our set of testing data.</p>
-<p>First predict successful exercises and errors on the given testing set.</p>
-<pre class="r"><code>predict(modelRF,testSet)</code></pre>
-<pre><code>##  [1] B A B A A E D B A A B C B A E E A B B B
-## Levels: A B C D E</code></pre>
-<p>Now, save the datapoints to files for upload.</p>
+<p>Now we apply the model to our set of testing data and save the datapoints to files for upload. This code is copied directly from class.</p>
 <pre class="r"><code>adir&lt;-&quot;adir&quot;
 if(!file.exists(adir)) dir.create(adir)
-
 pml_write_files = function(x){
   n = length(x)
   for(i in 1:n){
@@ -208,7 +210,6 @@ pml_write_files = function(x){
     write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
   }
 }
-
 pml_write_files(predict(modelRF,testSet))</code></pre>
 </div>
 
